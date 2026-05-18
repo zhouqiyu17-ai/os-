@@ -66,7 +66,7 @@ int msgqueue_send(ipc_context_t *ctx, const void *buf, size_t len)
 
     struct msgbuf_custom msg;
     memset(&msg, 0, sizeof(msg));
-    msg.mtype = ctx->role == IPC_ROLE_CLIENT ? MSG_TYPE_BASE : priv->peer_pid;
+    msg.mtype = MSG_TYPE_BASE;
     memcpy(msg.mtext, buf, len);
 
     if (msgsnd(priv->msgqid, &msg, len, 0) < 0) {
@@ -79,7 +79,7 @@ int msgqueue_send(ipc_context_t *ctx, const void *buf, size_t len)
 int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
 {
     struct msgqueue_priv *priv = ctx->priv;
-    long recv_type = ctx->role == IPC_ROLE_SERVER ? MSG_TYPE_BASE : (long)getpid();
+    long recv_type = MSG_TYPE_BASE;
 
     if (len > MSG_MAX_LEN) return -1;
 
@@ -92,8 +92,7 @@ int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
         return -1;
     }
 
-    if (ctx->role == IPC_ROLE_SERVER)
-        priv->peer_pid = (pid_t)atoi(msg.mtext);
+
 
     memcpy(buf, msg.mtext, (size_t)n);
     return (int)n;
