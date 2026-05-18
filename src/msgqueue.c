@@ -19,6 +19,9 @@ int msgqueue_server_init(ipc_context_t *ctx)
         return -1;
     }
 
+    int old = msgget(MSGQUEUE_KEY, 0666);
+    if (old >= 0) msgctl(old, IPC_RMID, NULL);
+
     priv->msgqid = msgget(MSGQUEUE_KEY, IPC_CREAT | 0666);
     if (priv->msgqid < 0) {
         perror("msgget server");
@@ -97,6 +100,7 @@ int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
         free(msg);
         return -1;
     }
+    if ((size_t)n > len) { free(msg); return -1; }
 
     memcpy(buf, msg->mtext, (size_t)n);
     free(msg);
