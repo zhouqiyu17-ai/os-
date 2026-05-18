@@ -4,7 +4,7 @@
 #include "ipc.h"
 
 #define SHM_KEY    0x22345678
-#define SHM_SIZE   (2 * 1024 * 1024)
+#define SHM_SIZE   (4 * 1024 * 1024)
 #define SEM_KEY    0x32345678
 
 struct shm_priv {

@@ -69,6 +69,9 @@ int shm_server_init(ipc_context_t *ctx)
 
     sem_init(priv->semid, 1);
 
+    priv->offset_w = SHM_SIZE / 2;
+    priv->offset_r = 0;
+
     ctx->priv        = priv;
     ctx->ops.send    = shm_send;
     ctx->ops.recv    = shm_recv;
@@ -106,6 +109,9 @@ int shm_client_init(ipc_context_t *ctx)
         return -1;
     }
 
+    priv->offset_w = 0;
+    priv->offset_r = SHM_SIZE / 2;
+
     ctx->priv        = priv;
     ctx->ops.send    = shm_send;
     ctx->ops.recv    = shm_recv;
@@ -116,12 +122,13 @@ int shm_client_init(ipc_context_t *ctx)
 int shm_send(ipc_context_t *ctx, const void *buf, size_t len)
 {
     struct shm_priv *priv = ctx->priv;
+    char *base = (char *)priv->addr + priv->offset_w;
 
     sem_lock(priv->semid);
 
     uint32_t net_len = htonl((uint32_t)len);
-    memcpy((char *)priv->addr, &net_len, sizeof(net_len));
-    memcpy((char *)priv->addr + sizeof(net_len), buf, len);
+    memcpy(base, &net_len, sizeof(net_len));
+    memcpy(base + sizeof(net_len), buf, len);
 
     sem_unlock(priv->semid);
     return (int)len;
@@ -130,18 +137,25 @@ int shm_send(ipc_context_t *ctx, const void *buf, size_t len)
 int shm_recv(ipc_context_t *ctx, void *buf, size_t len)
 {
     struct shm_priv *priv = ctx->priv;
+    char *base = (char *)priv->addr + priv->offset_r;
 
     sem_lock(priv->semid);
 
     uint32_t net_len;
-    memcpy(&net_len, priv->addr, sizeof(net_len));
+    memcpy(&net_len, base, sizeof(net_len));
     uint32_t pkt_len = ntohl(net_len);
+    if (pkt_len == 0) {
+        sem_unlock(priv->semid);
+        return -1;
+    }
     if ((size_t)pkt_len > len) {
         sem_unlock(priv->semid);
         return -1;
     }
 
-    memcpy(buf, (char *)priv->addr + sizeof(net_len), pkt_len);
+    memcpy(buf, base + sizeof(net_len), pkt_len);
+
+    memset(base, 0, sizeof(net_len));
 
     sem_unlock(priv->semid);
     return (int)pkt_len;

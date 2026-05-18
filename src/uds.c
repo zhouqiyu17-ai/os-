@@ -132,6 +132,10 @@ int uds_recv(ipc_context_t *ctx, void *buf, size_t len)
 
     uint32_t net_len;
     ssize_t nr = read(fd, &net_len, sizeof(net_len));
+    if (nr == 0) {
+        errno = ECONNRESET;
+        return -1;
+    }
     if (nr != sizeof(net_len)) return -1;
 
     uint32_t pkt_len = ntohl(net_len);
@@ -140,7 +144,11 @@ int uds_recv(ipc_context_t *ctx, void *buf, size_t len)
     size_t total = 0;
     while (total < pkt_len) {
         ssize_t n = read(fd, (char *)buf + total, pkt_len - total);
-        if (n <= 0) return -1;
+        if (n == 0) {
+            errno = ECONNRESET;
+            return -1;
+        }
+        if (n < 0) return -1;
         total += (size_t)n;
     }
     return (int)total;
