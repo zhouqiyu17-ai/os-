@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <arpa/inet.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
 #include <errno.h>
@@ -134,7 +136,7 @@ int shm_recv(ipc_context_t *ctx, void *buf, size_t len)
     uint32_t net_len;
     memcpy(&net_len, priv->addr, sizeof(net_len));
     uint32_t pkt_len = ntohl(net_len);
-    if (pkt_len > len) {
+    if ((size_t)pkt_len > len) {
         sem_unlock(priv->semid);
         return -1;
     }
