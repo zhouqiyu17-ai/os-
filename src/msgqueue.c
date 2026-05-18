@@ -103,16 +103,6 @@ int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
     free(msg);
     return (int)n;
 }
-
-    struct msgbuf_custom msg;
-    memset(&msg, 0, sizeof(msg));
-    msg.mtype = MSG_TYPE_BASE;
-    memcpy(msg.mtext, buf, len);
-
-    if (msgsnd(priv->msgqid, &msg, len, 0) < 0) {
-        perror("msgsnd");
-        return -1;
-    }
     return (int)len;
 }
 
