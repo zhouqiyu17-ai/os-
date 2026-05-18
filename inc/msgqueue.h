@@ -5,11 +5,11 @@
 
 #define MSGQUEUE_KEY 0x12345678
 #define MSG_TYPE_BASE 1
-#define MSG_MAX_LEN 8192
+#define MSG_MAX_LEN (1024 * 1024)
 
 struct msgbuf_custom {
     long mtype;
-    char mtext[MSG_MAX_LEN];
+    char mtext[];
 };
 
 int msgqueue_server_init(ipc_context_t *ctx);

@@ -64,6 +64,46 @@ int msgqueue_send(ipc_context_t *ctx, const void *buf, size_t len)
         return -1;
     }
 
+    size_t msgsz = sizeof(long) + len;
+    struct msgbuf_custom *msg = malloc(msgsz);
+    if (!msg) return -1;
+    memset(msg, 0, msgsz);
+    msg->mtype = MSG_TYPE_BASE;
+    memcpy(msg->mtext, buf, len);
+
+    if (msgsnd(priv->msgqid, msg, len, 0) < 0) {
+        perror("msgsnd");
+        free(msg);
+        return -1;
+    }
+    free(msg);
+    return (int)len;
+}
+
+int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
+{
+    struct msgqueue_priv *priv = ctx->priv;
+    long recv_type = MSG_TYPE_BASE;
+
+    if (len > MSG_MAX_LEN) return -1;
+
+    size_t msgsz = sizeof(long) + MSG_MAX_LEN;
+    struct msgbuf_custom *msg = malloc(msgsz);
+    if (!msg) return -1;
+
+    ssize_t n = msgrcv(priv->msgqid, msg, MSG_MAX_LEN, recv_type, 0);
+    if (n < 0) {
+        if (errno == EINTR) { free(msg); return -1; }
+        perror("msgrcv");
+        free(msg);
+        return -1;
+    }
+
+    memcpy(buf, msg->mtext, (size_t)n);
+    free(msg);
+    return (int)n;
+}
+
     struct msgbuf_custom msg;
     memset(&msg, 0, sizeof(msg));
     msg.mtype = MSG_TYPE_BASE;
