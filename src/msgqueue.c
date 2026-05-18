@@ -9,7 +9,6 @@
 
 struct msgqueue_priv {
     int msgqid;
-    pid_t peer_pid;
 };
 
 int msgqueue_server_init(ipc_context_t *ctx)
@@ -101,30 +100,6 @@ int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
 
     memcpy(buf, msg->mtext, (size_t)n);
     free(msg);
-    return (int)n;
-}
-    return (int)len;
-}
-
-int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
-{
-    struct msgqueue_priv *priv = ctx->priv;
-    long recv_type = MSG_TYPE_BASE;
-
-    if (len > MSG_MAX_LEN) return -1;
-
-    struct msgbuf_custom msg;
-    memset(&msg, 0, sizeof(msg));
-    ssize_t n = msgrcv(priv->msgqid, &msg, MSG_MAX_LEN, recv_type, 0);
-    if (n < 0) {
-        if (errno == EINTR) return -1;
-        perror("msgrcv");
-        return -1;
-    }
-
-
-
-    memcpy(buf, msg.mtext, (size_t)n);
     return (int)n;
 }
 
