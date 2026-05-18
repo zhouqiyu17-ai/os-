@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <arpa/inet.h>
+#include <time.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
 #include <errno.h>
@@ -16,24 +17,9 @@ union semun {
 };
 #endif
 
-static int sem_lock(int semid)
-{
-    struct sembuf sb = { 0, -1, 0 };
-    return semop(semid, &sb, 1);
-}
-
-static int sem_unlock(int semid)
-{
-    struct sembuf sb = { 0, 1, 0 };
-    return semop(semid, &sb, 1);
-}
-
-static int sem_init(int semid, int val)
-{
-    union semun arg;
-    arg.val = val;
-    return semctl(semid, 0, SETVAL, arg);
-}
+#define CS_SEM  0
+#define SC_SEM  1
+#define TIMEOUT_SEC 3
 
 int shm_server_init(ipc_context_t *ctx)
 {
@@ -58,7 +44,7 @@ int shm_server_init(ipc_context_t *ctx)
         return -1;
     }
 
-    priv->semid = semget(SEM_KEY, 1, IPC_CREAT | 0666);
+    priv->semid = semget(SEM_KEY, 2, IPC_CREAT | 0666);
     if (priv->semid < 0) {
         perror("semget server");
         shmdt(priv->addr);
@@ -67,7 +53,12 @@ int shm_server_init(ipc_context_t *ctx)
         return -1;
     }
 
-    sem_init(priv->semid, 1);
+    {
+        union semun arg;
+        unsigned short vals[2] = { 0, 0 };
+        arg.array = vals;
+        semctl(priv->semid, 0, SETALL, arg);
+    }
 
     priv->offset_w = SHM_SIZE / 2;
     priv->offset_r = 0;
@@ -101,7 +92,7 @@ int shm_client_init(ipc_context_t *ctx)
         return -1;
     }
 
-    priv->semid = semget(SEM_KEY, 1, 0666);
+    priv->semid = semget(SEM_KEY, 2, 0666);
     if (priv->semid < 0) {
         perror("semget client");
         shmdt(priv->addr);
@@ -123,14 +114,17 @@ int shm_send(ipc_context_t *ctx, const void *buf, size_t len)
 {
     struct shm_priv *priv = ctx->priv;
     char *base = (char *)priv->addr + priv->offset_w;
-
-    sem_lock(priv->semid);
+    int signal_sem = (ctx->role == IPC_ROLE_CLIENT) ? CS_SEM : SC_SEM;
 
     uint32_t net_len = htonl((uint32_t)len);
     memcpy(base, &net_len, sizeof(net_len));
     memcpy(base + sizeof(net_len), buf, len);
 
-    sem_unlock(priv->semid);
+    struct sembuf sb = { (unsigned short)signal_sem, 1, 0 };
+    if (semop(priv->semid, &sb, 1) < 0) {
+        perror("semop post");
+        return -1;
+    }
     return (int)len;
 }
 
@@ -138,26 +132,33 @@ int shm_recv(ipc_context_t *ctx, void *buf, size_t len)
 {
     struct shm_priv *priv = ctx->priv;
     char *base = (char *)priv->addr + priv->offset_r;
+    int wait_sem = (ctx->role == IPC_ROLE_SERVER) ? CS_SEM : SC_SEM;
 
-    sem_lock(priv->semid);
+    struct sembuf sb = { (unsigned short)wait_sem, -1, 0 };
+
+    if (ctx->role == IPC_ROLE_SERVER) {
+        struct timespec ts;
+        ts.tv_sec = time(NULL) + TIMEOUT_SEC;
+        ts.tv_nsec = 0;
+        if (semtimedop(priv->semid, &sb, 1, &ts) < 0) {
+            if (errno == EAGAIN) return -1;
+            perror("semtimedop");
+            return -1;
+        }
+    } else {
+        if (semop(priv->semid, &sb, 1) < 0) {
+            perror("semop wait");
+            return -1;
+        }
+    }
 
     uint32_t net_len;
     memcpy(&net_len, base, sizeof(net_len));
     uint32_t pkt_len = ntohl(net_len);
-    if (pkt_len == 0) {
-        sem_unlock(priv->semid);
-        return -1;
-    }
-    if ((size_t)pkt_len > len) {
-        sem_unlock(priv->semid);
-        return -1;
-    }
+    if ((size_t)pkt_len > len) return -1;
 
     memcpy(buf, base + sizeof(net_len), pkt_len);
-
     memset(base, 0, sizeof(net_len));
-
-    sem_unlock(priv->semid);
     return (int)pkt_len;
 }
 
