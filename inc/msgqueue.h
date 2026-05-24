@@ -5,7 +5,7 @@
 
 #define MSGQUEUE_KEY 0x12345678
 #define MSG_TYPE_BASE 1
-#define MSG_MAX_LEN (1024 * 1024)
+#define MSG_MAX_LEN (8192)
 
 struct msgbuf_custom {
     long mtype;
