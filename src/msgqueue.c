@@ -22,13 +22,21 @@ static void timeout_handler(int sig) { (void)sig; recv_timeout = 1; }
 
 static size_t get_msgmax(void)
 {
+    unsigned long v = 0;
     FILE *f = fopen("/proc/sys/kernel/msgmax", "r");
-    unsigned long v = 8192;
     if (f) { fscanf(f, "%lu", &v); fclose(f); }
+
     if (v < (unsigned long)MSG_MAX_LEN) {
         f = fopen("/proc/sys/kernel/msgmax", "w");
-        if (f) { fprintf(f, "%u\n", MSG_MAX_LEN); fclose(f); v = MSG_MAX_LEN; }
+        if (f) { fprintf(f, "%d\n", MSG_MAX_LEN); fclose(f); }
+        else { system("sysctl -w kernel.msgmax=2097152 2>/dev/null"); }
+
+        unsigned long v2 = 0;
+        f = fopen("/proc/sys/kernel/msgmax", "r");
+        if (f) { fscanf(f, "%lu", &v2); fclose(f); }
+        if (v2 > v) v = v2;
     }
+    if (v == 0) v = 8192;
     if (v > (unsigned long)MSG_MAX_LEN) v = MSG_MAX_LEN;
     return (size_t)v;
 }
