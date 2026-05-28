@@ -21,7 +21,7 @@ static void bench_server(ipc_type_t type)
     ipc_context_t ctx;
     if (ipc_init(&ctx, type, IPC_ROLE_SERVER, NULL) < 0) {
         fprintf(stderr, "bench server init failed for %s\n", ipc_type_name(type));
-        exit(1);
+        return;
     }
 
     const size_t sizes[] = { 1, 64, 1024, 64 * 1024, 1024 * 1024 };
@@ -31,30 +31,27 @@ static void bench_server(ipc_type_t type)
     for (int s = 0; s < n_sizes; s++) {
         size_t pkt_len = sizes[s];
         char *buf = malloc(pkt_len);
-        if (!buf) {
-            perror("malloc");
-            continue;
-        }
+        if (!buf) { perror("malloc"); continue; }
         memset(buf, 0, pkt_len);
 
+        int ok = 1;
         for (int i = 0; i < ROUNDS; i++) {
             int n = ipc_recv(&ctx, buf, pkt_len);
             if (n < 0) {
                 fprintf(stderr, "[%s Server] recv failed at round %d\n",
                         ipc_type_name(type), i);
-                free(buf);
-                ipc_cleanup(&ctx);
-                exit(1);
+                ok = 0;
+                break;
             }
             if (ipc_send(&ctx, buf, pkt_len) < 0) {
                 fprintf(stderr, "[%s Server] send failed at round %d\n",
                         ipc_type_name(type), i);
-                free(buf);
-                ipc_cleanup(&ctx);
-                exit(1);
+                ok = 0;
+                break;
             }
         }
         free(buf);
+        if (!ok) break;
         printf("[%s Server] completed %s x %d rounds\n",
                ipc_type_name(type), labels[s], ROUNDS);
     }
@@ -67,7 +64,7 @@ static void bench_client(ipc_type_t type)
     ipc_context_t ctx;
     if (ipc_init(&ctx, type, IPC_ROLE_CLIENT, NULL) < 0) {
         fprintf(stderr, "bench client init failed for %s\n", ipc_type_name(type));
-        exit(1);
+        return;
     }
 
     const size_t sizes[] = { 1, 64, 1024, 64 * 1024, 1024 * 1024 };
@@ -91,6 +88,7 @@ static void bench_client(ipc_type_t type)
 
         double latencies[ROUNDS];
         double t0 = now_ms();
+        int ok = 1;
 
         for (int i = 0; i < ROUNDS; i++) {
             double t_start = now_ms();
@@ -98,24 +96,24 @@ static void bench_client(ipc_type_t type)
             if (ipc_send(&ctx, send_buf, pkt_len) < 0) {
                 fprintf(stderr, "[%s Client] send failed at round %d\n",
                         ipc_type_name(type), i);
-                free(send_buf);
-                free(recv_buf);
-                ipc_cleanup(&ctx);
-                exit(1);
+                ok = 0;
+                break;
             }
 
             if (ipc_recv(&ctx, recv_buf, pkt_len) < 0) {
                 fprintf(stderr, "[%s Client] recv failed at round %d\n",
                         ipc_type_name(type), i);
-                free(send_buf);
-                free(recv_buf);
-                ipc_cleanup(&ctx);
-                exit(1);
+                ok = 0;
+                break;
             }
 
             double t_end = now_ms();
             latencies[i] = (t_end - t_start) * 1000.0;
         }
+
+        free(send_buf);
+        free(recv_buf);
+        if (!ok) break;
 
         double t1 = now_ms();
         double total_time_s = (t1 - t0) / 1000.0;
@@ -130,9 +128,6 @@ static void bench_client(ipc_type_t type)
 
         printf("%-8s %-16.1f %-18.2f\n", labels[s], avg_us, throughput_mbps);
         fflush(stdout);
-
-        free(send_buf);
-        free(recv_buf);
     }
 
     ipc_cleanup(&ctx);
