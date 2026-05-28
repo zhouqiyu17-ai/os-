@@ -12,12 +12,28 @@
 struct msgqueue_priv {
     int  msgqid;
     char *buf;
+    size_t msgmax;
 };
+
+static size_t get_msgmax(void)
+{
+    FILE *f = fopen("/proc/sys/kernel/msgmax", "r");
+    unsigned long v = 8192;
+    if (f) { fscanf(f, "%lu", &v); fclose(f); }
+    if (v < (unsigned long)MSG_MAX_LEN) {
+        f = fopen("/proc/sys/kernel/msgmax", "w");
+        if (f) { fprintf(f, "%u\n", MSG_MAX_LEN); fclose(f); v = MSG_MAX_LEN; }
+    }
+    if (v > (unsigned long)MSG_MAX_LEN) v = MSG_MAX_LEN;
+    return (size_t)v;
+}
 
 int msgqueue_server_init(ipc_context_t *ctx)
 {
     struct msgqueue_priv *priv = calloc(1, sizeof(*priv));
     if (!priv) { perror("calloc"); return -1; }
+
+    priv->msgmax = get_msgmax();
 
     priv->buf = malloc(MSG_MAX_LEN);
     if (!priv->buf) { perror("malloc buf"); free(priv); return -1; }
@@ -40,6 +56,8 @@ int msgqueue_client_init(ipc_context_t *ctx)
     struct msgqueue_priv *priv = calloc(1, sizeof(*priv));
     if (!priv) { perror("calloc"); return -1; }
 
+    priv->msgmax = get_msgmax();
+
     priv->buf = malloc(MSG_MAX_LEN);
     if (!priv->buf) { perror("malloc buf"); free(priv); return -1; }
 
@@ -56,7 +74,7 @@ int msgqueue_client_init(ipc_context_t *ctx)
 int msgqueue_send(ipc_context_t *ctx, const void *buf, size_t len)
 {
     struct msgqueue_priv *priv = ctx->priv;
-    if (len > MSG_MAX_LEN) return -1;
+    if (len > priv->msgmax) return -1;
 
     long mtype = (ctx->role == IPC_ROLE_CLIENT) ? MSG_TYPE_C2S : MSG_TYPE_S2C;
     memcpy(priv->buf, &mtype, sizeof(long));
@@ -72,10 +90,10 @@ int msgqueue_send(ipc_context_t *ctx, const void *buf, size_t len)
 int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
 {
     struct msgqueue_priv *priv = ctx->priv;
-    if (len > MSG_MAX_LEN) return -1;
+    if (len > priv->msgmax) return -1;
 
     long mtype = (ctx->role == IPC_ROLE_SERVER) ? MSG_TYPE_C2S : MSG_TYPE_S2C;
-    ssize_t n = msgrcv(priv->msgqid, priv->buf, MSG_MAX_LEN, mtype, 0);
+    ssize_t n = msgrcv(priv->msgqid, priv->buf, priv->msgmax, mtype, 0);
     if (n < 0) {
         if (errno == EINTR) return -1;
         perror("msgrcv");
