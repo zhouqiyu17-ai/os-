@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/msg.h>
+#include <signal.h>
 #include <errno.h>
 #include "msgqueue.h"
 
@@ -14,6 +15,10 @@ struct msgqueue_priv {
     char *buf;
     size_t msgmax;
 };
+
+static volatile int recv_timeout;
+
+static void timeout_handler(int sig) { (void)sig; recv_timeout = 1; }
 
 static size_t get_msgmax(void)
 {
@@ -43,6 +48,8 @@ int msgqueue_server_init(ipc_context_t *ctx)
 
     priv->msgqid = msgget(MSGQUEUE_KEY, IPC_CREAT | 0666);
     if (priv->msgqid < 0) { perror("msgget server"); free(priv->buf); free(priv); return -1; }
+
+    signal(SIGALRM, timeout_handler);
 
     ctx->priv = priv;
     ctx->ops.send    = msgqueue_send;
@@ -81,7 +88,7 @@ int msgqueue_send(ipc_context_t *ctx, const void *buf, size_t len)
     memcpy(priv->buf + sizeof(long), buf, len);
 
     if (msgsnd(priv->msgqid, priv->buf, len, 0) < 0) {
-        perror("msgsnd");
+        if (errno != EINTR) perror("msgsnd");
         return -1;
     }
     return (int)len;
@@ -93,7 +100,18 @@ int msgqueue_recv(ipc_context_t *ctx, void *buf, size_t len)
     if (len > priv->msgmax) return -1;
 
     long mtype = (ctx->role == IPC_ROLE_SERVER) ? MSG_TYPE_C2S : MSG_TYPE_S2C;
-    ssize_t n = msgrcv(priv->msgqid, priv->buf, priv->msgmax, mtype, 0);
+    recv_timeout = 0;
+
+    ssize_t n;
+    if (ctx->role == IPC_ROLE_SERVER) {
+        alarm(3);
+        n = msgrcv(priv->msgqid, priv->buf, priv->msgmax, mtype, 0);
+        alarm(0);
+        if (recv_timeout) return -1;
+    } else {
+        n = msgrcv(priv->msgqid, priv->buf, priv->msgmax, mtype, 0);
+    }
+
     if (n < 0) {
         if (errno == EINTR) return -1;
         perror("msgrcv");
